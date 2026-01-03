@@ -44,8 +44,10 @@ jobs:
       - name: Prepare SSH Key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY_BASE64 }}" | base64 -d > ~/.ssh/deploy_key
+          echo "${{ secrets.EC2_SSH_KEY_BASE64 }}" > /tmp/key_b64.txt
+          base64 -d /tmp/key_b64.txt > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          rm /tmp/key_b64.txt
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
