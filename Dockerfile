@@ -37,7 +37,7 @@ COPY --from=builder /app/patches ./patches
 
 # Install only production dependencies
 RUN pnpm install --prod --frozen-lockfile
-
+ 
 # Expose the app port
 EXPOSE 3000
 
