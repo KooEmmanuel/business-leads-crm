@@ -31,7 +31,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ env.REPO_LOWERCASE }}:latest
+          tags: ghcr.io/${{ env.REPO_LOWERCASE }}:latest 
 
   deploy:
     needs: build-and-push
@@ -45,9 +45,8 @@ jobs:
       - name: Create docker-compose.prod.yml
         run: |
           sudo mkdir -p /opt/app
-          cd /opt/app
           
-          sudo tee docker-compose.prod.yml > /dev/null << EOF
+          sudo tee /opt/app/docker-compose.prod.yml > /dev/null << 'EOF'
           services:
             app:
               image: ghcr.io/${REPO_LOWERCASE}:latest
@@ -65,12 +64,12 @@ jobs:
               container_name: crm-db
               restart: always
               environment:
-                - MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD}
+                - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
                 - MYSQL_DATABASE=business_leads_crm
               volumes:
                 - mysql_data:/var/lib/mysql
               healthcheck:
-                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
+                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
                 interval: 10s
                 timeout: 5s
                 retries: 5
@@ -78,6 +77,9 @@ jobs:
           volumes:
             mysql_data:
           EOF
+          
+          # Fix permissions
+          sudo chown ec2-user:ec2-user /opt/app/docker-compose.prod.yml
 
       - name: Login to GitHub Container Registry
         run: |
@@ -86,6 +88,6 @@ jobs:
       - name: Deploy with Docker Compose
         run: |
           cd /opt/app
-          docker compose -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          docker-compose -f docker-compose.prod.yml pull
+          docker-compose -f docker-compose.prod.yml up -d --remove-orphans
           echo "Deployment completed successfully!"
