@@ -1,13 +1,15 @@
 # Stage 1: Build
 FROM node:24-slim AS builder
 
-# Enable corepack and prepare the pnpm version specified in package.json
+# Enable corepack and prepare pnpm
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files AND the patches directory
+# This is required because pnpm needs the patches to install dependencies
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -21,17 +23,17 @@ RUN pnpm build
 # Stage 2: Runtime
 FROM node:24-slim
 
-# Enable corepack for runtime dependencies
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 WORKDIR /app
 
-# Copy built assets from builder
+# Copy built assets and necessary files for migrations
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/patches ./patches
 
 # Install only production dependencies
 RUN pnpm install --prod --frozen-lockfile
