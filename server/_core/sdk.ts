@@ -24,17 +24,16 @@ export type SessionPayload = {
   name: string;
 };
 
-const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
-const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
-const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
+// Custom OAuth server endpoints
+const EXCHANGE_TOKEN_PATH = `/oauth/token`;
+const GET_USER_INFO_PATH = `/oauth/userinfo`;
+const GET_USER_INFO_WITH_JWT_PATH = `/oauth/userinfo/jwt`;
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
+    // OAuth service is optional when using Clerk for authentication
+    if (ENV.oAuthServerUrl) {
+      console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     }
   }
 
@@ -47,11 +46,13 @@ class OAuthService {
     code: string,
     state: string
   ): Promise<ExchangeTokenResponse> {
-    const payload: ExchangeTokenRequest = {
-      clientId: ENV.appId,
+    const redirectUri = this.decodeState(state);
+    const payload = {
       grantType: "authorization_code",
       code,
-      redirectUri: this.decodeState(state),
+      redirectUri,
+      clientId: ENV.appId,
+      // clientSecret is optional for public clients
     };
 
     const { data } = await this.client.post<ExchangeTokenResponse>(
@@ -72,7 +73,15 @@ class OAuthService {
       }
     );
 
-    return data;
+    // Map the response to match the expected format
+    return {
+      openId: data.openId,
+      projectId: data.projectId,
+      name: data.name,
+      email: data.email ?? null,
+      platform: "oauth",
+      loginMethod: "oauth",
+    } as GetUserInfoResponse;
   }
 }
 
@@ -235,7 +244,7 @@ class SDKServer {
   async getUserInfoWithJwt(
     jwtToken: string
   ): Promise<GetUserInfoWithJwtResponse> {
-    const payload: GetUserInfoWithJwtRequest = {
+    const payload = {
       jwtToken,
       projectId: ENV.appId,
     };
@@ -251,8 +260,8 @@ class SDKServer {
     );
     return {
       ...(data as any),
-      platform: loginMethod,
-      loginMethod,
+      platform: loginMethod || "oauth",
+      loginMethod: loginMethod || "oauth",
     } as GetUserInfoWithJwtResponse;
   }
 

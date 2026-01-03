@@ -1,0 +1,106 @@
+name: Build and Deploy to EC2
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.yml"
+          target: "~/app"
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            mkdir -p ~/app
+            cd ~/app
+
+            # Create/Update .env file
+            echo "${{ secrets.ENV_FILE }}" > .env
+
+            # Login to GHCR
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Update the image tag in docker-compose if needed, 
+            # but we are using 'latest' which is handled by docker compose pull
+            sed -i "s|image: .*|image: ghcr.io/${{ github.repository }}:latest|g" docker-compose.yml || true
+            
+            # Since our docker-compose.yml uses 'build: .', we need to change it 
+            # to use the image from GHCR on the production server.
+            # We'll create a production-ready docker-compose on the fly or adjust the existing one.
+            
+            cat > docker-compose.prod.yml <<EOF
+            services:
+              app:
+                image: ghcr.io/${{ github.repository }}:latest
+                container_name: crm-app
+                restart: always
+                ports:
+                  - "3000:3000"
+                env_file: .env
+                depends_on:
+                  db:
+                    condition: service_healthy
+
+              db:
+                image: mysql:8.0
+                container_name: crm-db
+                restart: always
+                environment:
+                  - MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD}
+                  - MYSQL_DATABASE=business_leads_crm
+                volumes:
+                  - mysql_data:/var/lib/mysql
+                healthcheck:
+                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+
+            volumes:
+              mysql_data:
+            EOF
+
+            # Pull and Restart
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans

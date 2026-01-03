@@ -1,18 +1,35 @@
-import { useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { TrendingUp, Plus, DollarSign, Calendar } from "lucide-react";
+import { TrendingUp, Plus, DollarSign, Calendar, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Deal } from "../../../drizzle/schema";
+import { toast } from "sonner";
+import { useState } from "react";
 
 const DEAL_STAGES = ["prospecting", "negotiation", "proposal", "won", "lost"] as const;
 
 export default function Deals() {
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const [draggingDealId, setDraggingDealId] = useState<number | null>(null);
+
   const { data: deals, isLoading } = trpc.deals.list.useQuery();
-  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+
+  const updateDealMutation = trpc.deals.update.useMutation({
+    onSuccess: () => {
+      utils.deals.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(`Failed to move deal: ${error.message}`);
+    },
+  });
+
+  const createActivityMutation = trpc.activities.create.useMutation();
+  const syncExternalMutation = trpc.contacts.syncExternal.useMutation();
 
   const dealsByStage = DEAL_STAGES.reduce((acc, stage) => {
     acc[stage] = (deals || []).filter(d => d.stage === stage);
@@ -23,73 +40,97 @@ export default function Deals() {
     return sum + (deal.value ? parseFloat(deal.value.toString()) : 0);
   }, 0);
 
+  const handleDragStart = (dealId: number) => {
+    setDraggingDealId(dealId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.currentTarget.classList.add("bg-muted/50");
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove("bg-muted/50");
+  };
+
+  const handleDrop = (e: React.DragEvent, newStage: typeof DEAL_STAGES[number]) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove("bg-muted/50");
+    
+    if (draggingDealId) {
+      const deal = deals?.find(d => d.id === draggingDealId);
+      if (deal && deal.stage !== newStage) {
+        updateDealMutation.mutate({
+          id: draggingDealId,
+          stage: newStage,
+          closedAt: newStage === "won" ? new Date().toISOString() : undefined,
+        });
+
+        createActivityMutation.mutate({
+          type: "task",
+          title: `Moved deal to ${newStage}`,
+          description: `Deal "${deal.title}" was moved from ${deal.stage} to ${newStage} via drag and drop.`,
+          dealId: deal.id,
+          contactId: deal.contactId,
+        });
+
+        if (newStage === "won") {
+          syncExternalMutation.mutate();
+        }
+
+        toast.success(`Moved to ${newStage}`);
+      }
+      setDraggingDealId(null);
+    }
+  };
+
   const getStageColor = (stage: string) => {
     switch (stage) {
       case "prospecting":
-        return "bg-blue-500/20 text-blue-700 border-blue-300";
+        return "bg-[#E0F7FF] text-[#1A4D7A]"; // Kwickflow bg-light with primary
       case "negotiation":
-        return "bg-purple-500/20 text-purple-700 border-purple-300";
+        return "bg-[#F3E8FF] text-[#6B21A8]"; // VIP status colors
       case "proposal":
-        return "bg-orange-500/20 text-orange-700 border-orange-300";
+        return "bg-[#FED7AA] text-[#92400E]"; // Orange
       case "won":
-        return "bg-green-500/20 text-green-700 border-green-300";
+        return "bg-[#DCFCE7] text-[#15803D]"; // Success green
       case "lost":
-        return "bg-red-500/20 text-red-700 border-red-300";
+        return "bg-[#FEE2E2] text-[#991B1B]"; // Inactive red
       default:
-        return "bg-gray-500/20 text-gray-700 border-gray-300";
+        return "bg-gray-100 text-gray-700";
     }
   };
 
   return (
-    <div className="space-y-6">
+    <DashboardLayout>
+      <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-display font-bold text-foreground">Deals</h1>
           <p className="text-muted-foreground mt-2">Track your sales pipeline</p>
         </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" />
-              New Deal
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Deal</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <input placeholder="Deal title" className="w-full px-3 py-2 border border-border rounded" />
-              <input placeholder="Contact" className="w-full px-3 py-2 border border-border rounded" />
-              <input placeholder="Deal value" type="number" className="w-full px-3 py-2 border border-border rounded" />
-              <select className="w-full px-3 py-2 border border-border rounded">
-                <option>Select stage</option>
-                {DEAL_STAGES.map(stage => (
-                  <option key={stage} value={stage}>{stage}</option>
-                ))}
-              </select>
-              <Button className="w-full">Create Deal</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button className="gap-2" onClick={() => setLocation("/deals/create")}>
+          <Plus className="w-4 h-4" />
+          New Deal
+        </Button>
       </div>
 
       {/* Pipeline Stats */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-primary">{(deals || []).length}</div>
             <p className="text-sm text-muted-foreground mt-1">Total Deals</p>
           </CardContent>
         </Card>
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-accent">${totalPipeline.toLocaleString()}</div>
             <p className="text-sm text-muted-foreground mt-1">Pipeline Value</p>
           </CardContent>
         </Card>
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-primary">
               {dealsByStage.won.length}
@@ -101,107 +142,77 @@ export default function Deals() {
 
       {/* Pipeline Kanban */}
       {isLoading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading deals...</div>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+        </div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-5 overflow-x-auto pb-4">
+        <div className="flex gap-6 overflow-x-auto pb-8 pt-4 px-1 -mx-1 snap-x">
           {DEAL_STAGES.map(stage => (
-            <div key={stage} className="min-w-[300px]">
-              <div className="mb-4">
-                <h3 className="font-display font-bold capitalize text-foreground">
+            <div 
+              key={stage} 
+              className="min-w-[340px] w-[340px] flex flex-col h-full bg-secondary/5 dark:bg-white/[0.02] rounded-3xl p-6 transition-colors border border-border/40 dark:border-white/[0.05] snap-start"
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, stage)}
+            >
+              <div className="mb-6 flex items-center justify-between px-2">
+                <div>
+                  <h3 className="font-display font-bold capitalize text-foreground flex items-center gap-3 text-xl tracking-tight">
                   {stage}
+                    <Badge variant="secondary" className="h-6 px-2 text-xs bg-primary/10 text-primary border-none font-bold">
+                      {dealsByStage[stage].length}
+                    </Badge>
                 </h3>
-                <p className="text-sm text-muted-foreground">
-                  {dealsByStage[stage].length} deals
-                </p>
+                </div>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-4 flex-1 min-h-[500px]">
                 {dealsByStage[stage].map(deal => (
                   <Card
                     key={deal.id}
-                    className="brutalist-card bg-card cursor-pointer hover:bg-card/80 transition-colors"
-                    onClick={() => setSelectedDeal(deal)}
+                    draggable
+                    onDragStart={() => handleDragStart(deal.id)}
+                    className={`shadow-sm bg-card dark:bg-muted/20 cursor-grab active:cursor-grabbing hover:shadow-xl hover:-translate-y-1 dark:hover:bg-muted/30 transition-all border border-transparent dark:border-white/[0.05] ${draggingDealId === deal.id ? 'opacity-40 scale-95' : ''}`}
+                    onClick={() => setLocation(`/deals/${deal.id}`)}
                   >
-                    <CardContent className="pt-4">
-                      <h4 className="font-display font-bold text-foreground mb-2">{deal.title}</h4>
-                      <div className="space-y-2">
+                    <CardContent className="p-5 space-y-4">
+                      <h4 className="font-display font-bold text-foreground leading-snug text-base group-hover:text-primary transition-colors">{deal.title}</h4>
+                      <div className="space-y-3">
                         {deal.value && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center shrink-0">
                             <DollarSign className="w-4 h-4 text-accent" />
-                            <span className="text-sm font-mono">${parseFloat(deal.value.toString()).toLocaleString()}</span>
+                          </div>
+                            <span className="text-lg font-bold text-primary dark:text-accent tracking-tight">${parseFloat(deal.value.toString()).toLocaleString()}</span>
                           </div>
                         )}
-                        {deal.probability !== null && (
+                        <div className="flex items-center justify-between gap-2 pt-3 border-t border-border/40 dark:border-white/[0.05]">
                           <div className="flex items-center gap-2">
-                            <TrendingUp className="w-4 h-4 text-primary" />
-                            <span className="text-sm">{deal.probability}% probability</span>
-                          </div>
-                        )}
-                        {deal.expectedCloseDate && (
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm text-muted-foreground">
-                              {formatDistanceToNow(new Date(deal.expectedCloseDate), { addSuffix: true })}
+                            <Calendar className="w-4 h-4 text-muted-foreground/60" />
+                            <span className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider">
+                              {formatDistanceToNow(new Date(deal.createdAt), { addSuffix: true })}
                             </span>
                           </div>
+                          {deal.probability !== null && (
+                            <Badge variant="outline" className="text-[10px] h-5 px-2 border-primary/20 bg-primary/5 text-primary font-black">
+                              {deal.probability}%
+                            </Badge>
                         )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
+                {dealsByStage[stage].length === 0 && (
+                  <div className="h-32 border-2 border-dashed border-muted-foreground/10 dark:border-white/[0.03] rounded-2xl flex flex-col items-center justify-center gap-2 bg-white/[0.01]">
+                    <p className="text-sm text-muted-foreground/40 font-medium italic tracking-tight">Drop deal here</p>
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
-
-      {/* Deal Detail Modal */}
-      {selectedDeal && (
-        <Dialog open={!!selectedDeal} onOpenChange={() => setSelectedDeal(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{selectedDeal.title}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Value</label>
-                  <p className="text-foreground text-lg font-display">
-                    ${selectedDeal.value ? parseFloat(selectedDeal.value.toString()).toLocaleString() : "—"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Stage</label>
-                  <Badge className={`${getStageColor(selectedDeal.stage)} border-2 w-fit mt-1 capitalize`}>
-                    {selectedDeal.stage}
-                  </Badge>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Probability</label>
-                  <p className="text-foreground">{selectedDeal.probability}%</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Expected Close</label>
-                  <p className="text-foreground">
-                    {selectedDeal.expectedCloseDate
-                      ? new Date(selectedDeal.expectedCloseDate).toLocaleDateString()
-                      : "—"}
-                  </p>
-                </div>
-              </div>
-              {selectedDeal.description && (
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Description</label>
-                  <p className="text-foreground whitespace-pre-wrap">{selectedDeal.description}</p>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Button className="flex-1">Update Stage</Button>
-                <Button variant="outline" className="flex-1">Add Activity</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

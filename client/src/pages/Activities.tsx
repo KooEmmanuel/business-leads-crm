@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,60 +19,8 @@ export default function Activities() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
 
-  // Mock data for demonstration
-  const activities = [
-    {
-      id: 1,
-      type: "call" as const,
-      title: "Call with Sarah Johnson",
-      description: "Discussed pricing and implementation timeline",
-      contact: "Sarah Johnson",
-      company: "Tech Solutions Inc",
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      duration: 30,
-      outcome: "Interested",
-    },
-    {
-      id: 2,
-      type: "email" as const,
-      title: "Sent proposal to Mike Chen",
-      description: "Sent custom proposal for digital marketing services",
-      contact: "Mike Chen",
-      company: "Digital Marketing Pro",
-      timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    },
-    {
-      id: 3,
-      type: "meeting" as const,
-      title: "Meeting with Emma Davis",
-      description: "Onboarding meeting and project kickoff",
-      contact: "Emma Davis",
-      company: "Creative Agency",
-      timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-      duration: 60,
-      outcome: "Completed",
-    },
-    {
-      id: 4,
-      type: "note" as const,
-      title: "Follow-up reminder",
-      description: "Need to follow up on proposal by end of week",
-      contact: "John Smith",
-      company: "Enterprise Corp",
-      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-    },
-    {
-      id: 5,
-      type: "call" as const,
-      title: "Call with John Smith",
-      description: "Initial discovery call about requirements",
-      contact: "John Smith",
-      company: "Enterprise Corp",
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-      duration: 45,
-      outcome: "Qualified",
-    },
-  ];
+  // TODO: Replace with tRPC query when activities endpoints are implemented
+  const activities: any[] = [];
 
   const filteredActivities = activities.filter(activity => {
     const matchesSearch =
@@ -90,7 +39,8 @@ export default function Activities() {
   };
 
   return (
-    <div className="space-y-6">
+    <DashboardLayout>
+      <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -109,7 +59,7 @@ export default function Activities() {
               <DialogTitle>Log New Activity</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <select className="w-full px-3 py-2 border border-border rounded">
+              <select className="w-full px-3 py-2 border-none rounded bg-muted/50 focus:bg-muted/80 transition-colors outline-none">
                 <option>Select activity type</option>
                 <option value="call">Call</option>
                 <option value="email">Email</option>
@@ -118,7 +68,7 @@ export default function Activities() {
               </select>
               <Input placeholder="Select contact" />
               <Input placeholder="Activity title" />
-              <textarea placeholder="Description" className="w-full px-3 py-2 border border-border rounded min-h-[100px]" />
+              <textarea placeholder="Description" className="w-full px-3 py-2 border-none rounded bg-muted/50 focus:bg-muted/80 transition-colors min-h-[100px] outline-none" />
               <Button className="w-full">Log Activity</Button>
             </div>
           </DialogContent>
@@ -127,25 +77,25 @@ export default function Activities() {
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-primary">{activityStats.total}</div>
             <p className="text-sm text-muted-foreground mt-1">Total Activities</p>
           </CardContent>
         </Card>
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-accent">{activityStats.calls}</div>
             <p className="text-sm text-muted-foreground mt-1">Calls</p>
           </CardContent>
         </Card>
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-primary">{activityStats.emails}</div>
             <p className="text-sm text-muted-foreground mt-1">Emails</p>
           </CardContent>
         </Card>
-        <Card className="brutalist-card bg-card">
+        <Card className="shadow-sm bg-card border-none">
           <CardContent className="pt-6">
             <div className="text-3xl font-display font-bold text-accent">{activityStats.meetings}</div>
             <p className="text-sm text-muted-foreground mt-1">Meetings</p>
@@ -168,7 +118,7 @@ export default function Activities() {
           {["all", "call", "email", "meeting", "note"].map(type => (
             <Button
               key={type}
-              variant={filterType === type ? "default" : "outline"}
+              variant={filterType === type ? "default" : "secondary"}
               onClick={() => setFilterType(type)}
               className="capitalize"
             >
@@ -182,7 +132,7 @@ export default function Activities() {
       <div className="space-y-4">
         {filteredActivities.length === 0 ? (
           <div className="text-center py-12">
-            <Activity className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <Activity className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-20" />
             <p className="text-muted-foreground">No activities found</p>
           </div>
         ) : (
@@ -191,12 +141,12 @@ export default function Activities() {
             return (
               <Card
                 key={activity.id}
-                className="brutalist-card bg-card hover:bg-card/80 transition-colors"
+                className="shadow-sm bg-card hover:bg-card/80 transition-colors border-none"
               >
                 <CardContent className="pt-6">
                   <div className="flex gap-4">
                     <div className="flex-shrink-0">
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${ACTIVITY_TYPES[activity.type].color} border-2`}>
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${ACTIVITY_TYPES[activity.type].color} `}>
                         <ActivityIcon className="w-6 h-6" />
                       </div>
                     </div>
@@ -208,7 +158,7 @@ export default function Activities() {
                             {activity.contact} • {activity.company}
                           </p>
                         </div>
-                        <Badge className={`${ACTIVITY_TYPES[activity.type].color} border-2 capitalize`}>
+                        <Badge className={`${ACTIVITY_TYPES[activity.type].color}  capitalize`}>
                           {activity.type}
                         </Badge>
                       </div>
@@ -226,6 +176,7 @@ export default function Activities() {
           })
         )}
       </div>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

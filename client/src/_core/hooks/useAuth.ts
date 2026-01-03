@@ -1,7 +1,6 @@
-import { getLoginUrl } from "@/const";
+import { useUser, useClerk } from "@clerk/clerk-react";
+import { useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
-import { TRPCClientError } from "@trpc/client";
-import { useCallback, useEffect, useMemo } from "react";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -9,76 +8,87 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
-    options ?? {};
-  const utils = trpc.useUtils();
+  const { user, isLoaded: userLoaded, isSignedIn } = useUser();
+  const clerk = useClerk();
+  const syncMutation = trpc.auth.sync.useMutation();
+  const hasSyncedRef = useRef<string | null>(null); // Track which user ID we've synced
 
-  const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
-
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
-
-  const logout = useCallback(async () => {
-    try {
-      await logoutMutation.mutateAsync();
-    } catch (error: unknown) {
-      if (
-        error instanceof TRPCClientError &&
-        error.data?.code === "UNAUTHORIZED"
-      ) {
-        return;
+  // Sync user to database when they sign in (only once per user)
+  useEffect(() => {
+    if (isSignedIn && user && userLoaded && user.id) {
+      // Only sync if we haven't synced this user yet, and not currently syncing
+      if (hasSyncedRef.current !== user.id && !syncMutation.isPending) {
+        hasSyncedRef.current = user.id;
+        syncMutation.mutate(undefined, {
+          onError: () => {
+            // Reset on error so we can retry
+            hasSyncedRef.current = null;
+          },
+        });
       }
-      throw error;
-    } finally {
-      utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
+    } else if (!isSignedIn) {
+      // Reset when user signs out
+      hasSyncedRef.current = null;
     }
-  }, [logoutMutation, utils]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn, user?.id, userLoaded]);
+
+  // Store user info in localStorage (separate from state calculation to avoid side effects)
+  useEffect(() => {
+    if (user && userLoaded) {
+      const userInfo = {
+        id: user.id,
+        openId: user.id,
+        name: user.fullName || user.firstName || user.emailAddresses[0]?.emailAddress || "User",
+        email: user.emailAddresses[0]?.emailAddress || null,
+      };
+      
+      // Only update localStorage if the value actually changed
+      const currentInfo = localStorage.getItem("manus-runtime-user-info");
+      const newInfo = JSON.stringify(userInfo);
+      if (currentInfo !== newInfo) {
+        localStorage.setItem("manus-runtime-user-info", newInfo);
+      }
+    } else if (!user && userLoaded) {
+      localStorage.removeItem("manus-runtime-user-info");
+    }
+  }, [user?.id, user?.fullName, user?.firstName, user?.emailAddresses, userLoaded]);
+
+  const logout = async () => {
+    try {
+      await clerk.signOut();
+    } catch (error) {
+      console.error("[Auth] Logout failed", error);
+      throw error;
+    }
+  };
 
   const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
+    // Only consider authenticated when userLoaded is true AND isSignedIn is explicitly true
+    // This prevents showing unauthenticated state during initial load
+    const loading = !userLoaded;
+    const isAuthenticated = userLoaded && (isSignedIn === true);
+
     return {
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
+      user: user
+        ? {
+            id: user.id,
+            openId: user.id,
+            name: user.fullName || user.firstName || user.emailAddresses[0]?.emailAddress || "User",
+            email: user.emailAddresses[0]?.emailAddress || null,
+          }
+        : null,
+      loading,
+      error: null,
+      isAuthenticated,
     };
-  }, [
-    meQuery.data,
-    meQuery.error,
-    meQuery.isLoading,
-    logoutMutation.error,
-    logoutMutation.isPending,
-  ]);
-
-  useEffect(() => {
-    if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
-    if (state.user) return;
-    if (typeof window === "undefined") return;
-    if (window.location.pathname === redirectPath) return;
-
-    window.location.href = redirectPath
-  }, [
-    redirectOnUnauthenticated,
-    redirectPath,
-    logoutMutation.isPending,
-    meQuery.isLoading,
-    state.user,
-  ]);
+  }, [user, userLoaded, isSignedIn]);
 
   return {
     ...state,
-    refresh: () => meQuery.refetch(),
+    refresh: () => {
+      // Clerk automatically refetches, no manual refresh needed
+    },
     logout,
   };
 }
