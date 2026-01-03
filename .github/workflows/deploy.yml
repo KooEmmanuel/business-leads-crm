@@ -44,10 +44,10 @@ jobs:
 
       - name: Create docker-compose.prod.yml
         run: |
-          mkdir -p ~/app
-          cd ~/app
+          sudo mkdir -p /opt/app
+          cd /opt/app
           
-          cat > docker-compose.prod.yml << EOF
+          sudo tee docker-compose.prod.yml > /dev/null << EOF
           services:
             app:
               image: ghcr.io/${REPO_LOWERCASE}:latest
@@ -85,7 +85,7 @@ jobs:
 
       - name: Deploy with Docker Compose
         run: |
-          cd ~/app
+          cd /opt/app
           docker compose -f docker-compose.prod.yml pull
           docker compose -f docker-compose.prod.yml up -d --remove-orphans
           echo "Deployment completed successfully!"
