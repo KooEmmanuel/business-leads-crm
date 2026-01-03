@@ -37,21 +37,9 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Set lower case owner name
         run: |
           echo "REPO_LOWERCASE=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
-
-      - name: Copy docker-compose.yml to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.yml"
-          target: "~/app"
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -60,19 +48,20 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Create app directory
             mkdir -p ~/app
             cd ~/app
 
             # Create/Update .env file
-            echo "${{ secrets.ENV_FILE }}" > .env
+            cat > .env <<'ENVEOF'
+            ${{ secrets.ENV_FILE }}
+            ENVEOF
 
             # Login to GHCR
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Update the image tag in docker-compose if needed
-            sed -i "s|image: .*|image: ghcr.io/${{ env.REPO_LOWERCASE }}:latest|g" docker-compose.yml || true
-            
-            cat > docker-compose.prod.yml <<EOF
+            # Create production docker-compose file
+            cat > docker-compose.prod.yml <<'EOF'
             services:
               app:
                 image: ghcr.io/${{ env.REPO_LOWERCASE }}:latest
@@ -90,12 +79,12 @@ jobs:
                 container_name: crm-db
                 restart: always
                 environment:
-                  - MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD}
+                  - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
                   - MYSQL_DATABASE=business_leads_crm
                 volumes:
                   - mysql_data:/var/lib/mysql
                 healthcheck:
-                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
+                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
                   interval: 10s
                   timeout: 5s
                   retries: 5
@@ -104,6 +93,8 @@ jobs:
               mysql_data:
             EOF
 
-            # Pull and Restart
+            # Pull and restart
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            echo "Deployment completed successfully!"
