@@ -26,7 +26,7 @@ export class EmailService {
         from: `"${ENV.email.from.split('@')[0]}" <${ENV.email.from}>`,
         to,
         subject,
-        text: text || html.replace(/<[^>]*>/g, ""),
+        text: text || html.replace(/<[^>]*>/g, ""), 
         html,
       });
       console.log("[Email] Message sent: %s", info.messageId);
