@@ -41,20 +41,68 @@ jobs:
         run: |
           echo "REPO_LOWERCASE=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
 
-      - name: Decode SSH Key
-        run: |
-          echo "${{ secrets.EC2_SSH_KEY_BASE64 }}" | base64 -d > /tmp/ssh_key
-          echo "SSH_KEY<<EOF" >> $GITHUB_ENV
-          cat /tmp/ssh_key >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
       - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ env.SSH_KEY }}
-          script: |
+        run: |
+          # Decode the SSH key
+          echo "${{ secrets.EC2_SSH_KEY_BASE64 }}" | base64 -d > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          
+          # SSH and run deployment commands
+          ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+          # Create app directory
+          mkdir -p ~/app
+          cd ~/app
+
+          # Create/Update .env file
+          cat > .env << 'ENVEOF'
+          ${{ secrets.ENV_FILE }}
+          ENVEOF
+
+          # Login to GHCR
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          # Create production docker-compose file
+          cat > docker-compose.prod.yml << 'EOF'
+          services:
+            app:
+              image: ghcr.io/${{ env.REPO_LOWERCASE }}:latest
+              container_name: crm-app
+              restart: always
+              ports:
+                - "3000:3000"
+              env_file: .env
+              depends_on:
+                db:
+                  condition: service_healthy
+
+            db:
+              image: mysql:8.0
+              container_name: crm-db
+              restart: always
+              environment:
+                - MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD}
+                - MYSQL_DATABASE=business_leads_crm
+              volumes:
+                - mysql_data:/var/lib/mysql
+              healthcheck:
+                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
+          volumes:
+            mysql_data:
+          EOF
+
+          # Pull and restart
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+          echo "Deployment completed successfully!"
+          ENDSSH
+          
+          # Cleanup
+          rm -f /tmp/ssh_key
             # Create app directory
             mkdir -p ~/app
             cd ~/app
