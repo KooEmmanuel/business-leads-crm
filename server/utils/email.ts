@@ -108,7 +108,7 @@ export class EmailService {
             threadId: threadId,
             from: fromText,
             fromEmail: fromEmail,
-            to: parsed.to?.text || "",
+            to: (parsed.to as any[])?.map((to: any) => to.address).join(", ") || "",
             subject: parsed.subject,
             date: parsed.date,
             text: this.cleanTextBody(parsed.text || ""),
