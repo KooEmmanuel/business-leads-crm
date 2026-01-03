@@ -47,22 +47,13 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY_BASE64 }}" | base64 -d > /tmp/ssh_key
           chmod 600 /tmp/ssh_key
           
-          # SSH and run deployment commands
-          ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
-          # Create app directory
-          mkdir -p ~/app
-          cd ~/app
-
-          # Create/Update .env file
-          cat > .env << 'ENVEOF'
+          # Create the .env file locally
+          cat > /tmp/app.env << 'ENVEOF'
           ${{ secrets.ENV_FILE }}
           ENVEOF
-
-          # Login to GHCR
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Create production docker-compose file
-          cat > docker-compose.prod.yml << 'EOF'
+          
+          # Create docker-compose.prod.yml locally
+          cat > /tmp/docker-compose.prod.yml << 'EOF'
           services:
             app:
               image: ghcr.io/${{ env.REPO_LOWERCASE }}:latest
@@ -80,12 +71,12 @@ jobs:
               container_name: crm-db
               restart: always
               environment:
-                - MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD}
+                - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
                 - MYSQL_DATABASE=business_leads_crm
               volumes:
                 - mysql_data:/var/lib/mysql
               healthcheck:
-                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
+                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
                 interval: 10s
                 timeout: 5s
                 retries: 5
@@ -93,6 +84,20 @@ jobs:
           volumes:
             mysql_data:
           EOF
+          
+          # Create app directory on server
+          ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p ~/app"
+          
+          # Copy files to server
+          scp -i /tmp/ssh_key -o StrictHostKeyChecking=no /tmp/app.env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app/.env
+          scp -i /tmp/ssh_key -o StrictHostKeyChecking=no /tmp/docker-compose.prod.yml ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app/docker-compose.prod.yml
+          
+          # SSH and run deployment commands
+          ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} bash << ENDSSH
+          cd ~/app
+
+          # Login to GHCR
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
           # Pull and restart
           docker compose -f docker-compose.prod.yml pull
@@ -102,7 +107,7 @@ jobs:
           ENDSSH
           
           # Cleanup
-          rm -f /tmp/ssh_key
+          rm -f /tmp/ssh_key /tmp/app.env /tmp/docker-compose.prod.yml
             # Create app directory
             mkdir -p ~/app
             cd ~/app
