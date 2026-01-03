@@ -1,8 +1,8 @@
 # Stage 1: Build
 FROM node:24-slim AS builder
 
-# Install pnpm
-RUN npm install -g pnpm
+# Enable corepack and prepare the pnpm version specified in package.json
+RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 WORKDIR /app
 
@@ -21,8 +21,8 @@ RUN pnpm build
 # Stage 2: Runtime
 FROM node:24-slim
 
-# Install pnpm for any runtime needs
-RUN npm install -g pnpm
+# Enable corepack for runtime dependencies
+RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 WORKDIR /app
 
@@ -40,4 +40,4 @@ RUN pnpm install --prod --frozen-lockfile
 EXPOSE 3000
 
 # Run migrations and start the application
-CMD pnpm drizzle-kit migrate && pnpm start
+CMD ["sh", "-c", "pnpm drizzle-kit migrate && pnpm start"]
