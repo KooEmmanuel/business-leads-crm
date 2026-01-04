@@ -6,6 +6,10 @@ RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 WORKDIR /app
 
+# Accept build arguments for Vite env vars
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+
 # Copy package files AND the patches directory
 # This is required because pnpm needs the patches to install dependencies
 COPY package.json pnpm-lock.yaml ./
