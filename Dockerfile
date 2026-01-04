@@ -35,8 +35,8 @@ COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/patches ./patches
 
-# Install only production dependencies
-RUN pnpm install --prod --frozen-lockfile
+# Install all dependencies (vite and other build tools are needed at runtime)
+RUN pnpm install --frozen-lockfile
  
 # Expose the app port
 EXPOSE 3000
