@@ -47,10 +47,9 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
 if (!clerkPublishableKey) {
-  console.error("Missing VITE_CLERK_PUBLISHABLE_KEY environment variable");
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY environment variable");
+  console.warn("Missing VITE_CLERK_PUBLISHABLE_KEY environment variable - Clerk auth disabled");
 }
 
 console.log("Clerk key:", clerkPublishableKey ? "✓ Set" : "✗ Missing");
