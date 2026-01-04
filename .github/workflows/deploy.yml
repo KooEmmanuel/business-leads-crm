@@ -46,10 +46,10 @@ jobs:
         run: |
           sudo mkdir -p /opt/app
           
-          sudo tee /opt/app/docker-compose.prod.yml > /dev/null << 'EOF'
+          sudo tee /opt/app/docker-compose.prod.yml > /dev/null << EOF
           services:
             app:
-              image: ghcr.io/${REPO_LOWERCASE}:latest
+              image: ghcr.io/$REPO_LOWERCASE:latest
               container_name: crm-app
               restart: always
               ports:
@@ -64,12 +64,12 @@ jobs:
               container_name: crm-db
               restart: always
               environment:
-                - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+                - MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD}
                 - MYSQL_DATABASE=business_leads_crm
               volumes:
                 - mysql_data:/var/lib/mysql
               healthcheck:
-                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+                test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
                 interval: 10s
                 timeout: 5s
                 retries: 5
